@@ -1,6 +1,9 @@
 CHANGELOG
 =========
 
+* Internationalized Domain Names (IDNs) should now work in email. If you had custom DNS or custom web settings for internationalized domains, check that they are still working.
+
+
 In Development...
 -----------------
 
