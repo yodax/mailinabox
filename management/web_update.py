@@ -2,7 +2,9 @@
 # domains for which a mail account has been set up.
 ########################################################################
 
-import os, os.path, shutil, re, tempfile, rtyaml
+import os, os.path, shutil, re, tempfile, rtyaml, datetime
+
+import cryptography
 
 from mailconfig import get_mail_domains
 from dns_update import get_custom_dns_config, do_dns_update, get_dns_zones
@@ -335,3 +337,151 @@ def get_web_domains_info(env):
 		}
 		for domain in get_default_www_redirects(env)
 	]
+
+# SSL CERTIFICATE SELECTION
+
+def load_certificates(rootdir):
+	# Scan a directory for certificates and private keys and matches up
+	# which certificates work for which private keys. Also extracts the
+	# domain names that a certificate is good for, for matching later.
+
+	from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey, RSAPrivateKey
+	from cryptography.x509 import Certificate, DNSName, ExtensionNotFound, OID_COMMON_NAME, OID_SUBJECT_ALTERNATIVE_NAME
+
+	certs = [ ]
+	private_keys = { }
+	errors = { }
+
+	def process_pem_file(fn):
+		pems = load_pem_file(fn)
+
+		# If this is a private key, store its public key values (modulus, exponent)
+		# and file name for later so we can match it up with a certificate.
+		if isinstance(pems[0], RSAPrivateKey):
+			pub_key = pems[0].public_key().public_numbers()
+			private_keys[(pub_key.n, pub_key.e)] = {
+				"file": fn,
+				"key_size": pems[0].key_size,
+			}
+
+		# If this is a certificate, extract information about it --- especially
+		# the public key information so we can map it to a private key.
+		if isinstance(pems[0], Certificate):
+			# We'll compare the certificate's public key to the private keys we have.
+			pub_key = pems[0].public_key().public_numbers()
+
+			# Get the string corresponding to the Common Name (CN) of a name in the certificate.
+			def get_common_name(name):
+				try:
+					return name.get_attributes_for_oid(OID_COMMON_NAME)[0].value
+				except IndexError:
+					return None
+
+			# Extract the Subject Alternative Name values (just the DNS names).
+			try:
+				sans = pems[0].extensions.get_extension_for_oid(OID_SUBJECT_ALTERNATIVE_NAME).value.get_values_for_type(DNSName)
+			except ExtensionNotFound:
+				sans = []
+
+			# Okay we have it.
+			certs.append({
+				"filename": fn,
+				"public_key_numbers": (pub_key.n, pub_key.e),
+				"not_valid_before": pems[0].not_valid_before,
+				"not_valid_after": pems[0].not_valid_after,
+				"issuer": get_common_name(pems[0].issuer),
+				"subject": get_common_name(pems[0].subject),
+				"sans": sans,
+				"self_signed": (pems[0].issuer == pems[0].subject)
+			})
+
+	# Recursive walk of the directory.
+	for path, folders, files in os.walk(rootdir):
+		for fn in files:
+			if fn.lower().endswith(".pem"):
+				fn = os.path.join(path, fn)
+				try:
+					process_pem_file(fn)
+				except ValueError as e:
+					errors[fn] = str(e)
+
+	# Now that we have everything loaded, map certificates to their corresponding
+	# private key files.
+	for cert in certs:
+		cert['private_key'] = private_keys.get(cert['public_key_numbers'])
+		del cert['public_key_numbers'] # not interesting anymore
+
+	return certs
+
+def load_pem_file(pemfile):
+	# Our .pem files contain either certificate chains (multiple PEM blocks)
+	# or private keys. Split up the file into individual PEM blocks and
+	# load each.
+	re_pem = rb"(-+BEGIN (?:.+)-+[\r\n](?:[A-Za-z0-9+/=]{1,64}[\r\n])+-+END (?:.+)-+[\r\n])"
+	with open(pemfile, "rb") as f:
+		pem = f.read() + b"\n" # ensure trailing newline
+		pemblocks = re.findall(re_pem, pem)
+		if len(pemblocks) == 0:
+			raise ValueError("File does not contain valid PEM data.")
+		return [load_pem_block(pem) for pem in pemblocks]
+
+def load_pem_block(pem):
+	# Parse a "---BEGIN .... END---" block and return a Python object for it.
+	from cryptography.x509 import load_pem_x509_certificate
+	from cryptography.hazmat.primitives import serialization
+	from cryptography.hazmat.backends import default_backend
+	pem_type = re.match(b"-+BEGIN (.*?)-+\n", pem).group(1)
+	if pem_type == b"RSA PRIVATE KEY":
+		return serialization.load_pem_private_key(pem, password=None, backend=default_backend())
+	if pem_type == b"CERTIFICATE":
+		return load_pem_x509_certificate(pem, default_backend())
+	raise ValueError("Unsupported PEM object type: " + pem_type.decode("ascii", "replace"))
+
+def is_cert_good_for(cert, domain):
+	return any(cert_compare_name(cn, domain)
+		for cn in [cert['subject']] + cert['sans'])
+
+def cert_compare_name(cn, domain):
+	# Compares the common name or subject alternative name 'cn'
+	# against a domain name 'domain' to see if the certificate is
+	# valid for the domain.
+	if cn == domain:
+		return True
+	if cn.startswith("*."):
+		# This isn't quite follow the spec, but it is how this usually
+		# works. An asterisk as the first label in the name means we
+		# can match any subdomain of the remainder (but not recursively).
+		cn = cn.split(".")
+		domain = domain.split(".")
+		return (len(domain) == len(cn)) and (domain[1:] == cn[1:])
+	return False
+
+def select_certificate(certs, domain):
+	# There may be multiple certificates available for a domain name
+	# Choose the best one to deploy.
+
+	# Find the ones that apply to the domain (by the CN or subject alternative name)
+	# *and* that have a private key available.
+	certs = [cert for cert in certs
+		if is_cert_good_for(cert, domain) and cert['private_key']]
+	if len(certs) == 0:
+		return None
+
+	# Now sort and return the best.
+	certs.sort(key = lambda cert : (
+		# always prefer signed certificates when available
+		not cert['self_signed'],
+
+		# prefer certificates that are currently valid
+		cert['not_valid_before'] <= datetime.datetime.now() <= cert['not_valid_after'],
+
+		# prefer certificates that match the CN (vs SAN)
+		cert['subject'] == domain,
+
+		# prefer certificates with most time until expiry
+		cert['not_valid_after'],
+
+		), reverse=True)
+
+	return certs[0]
+
