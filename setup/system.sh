@@ -286,5 +286,6 @@ cat conf/fail2ban/jail.local \
 	| sed "s/PUBLIC_IP/$PUBLIC_IP/g" \
 	> /etc/fail2ban/jail.local
 cp conf/fail2ban/dovecotimap.conf /etc/fail2ban/filter.d/dovecotimap.conf
-
+cp conf/fail2ban/iptables-allports.local /etc/fail2ban/action.d/iptables-allports.local
+touch /etc/fail2ban/ip.blacklist
 restart_service fail2ban

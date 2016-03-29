@@ -1,0 +1,13 @@
+# This is a specific override for the recidive action that bans all ports. It will persist the ip-ban across reboots and
+# restarts of the service.
+[Definition]
+actionban = iptables -I fail2ban-<name> 1 -s <ip> -j <blocktype>
+	    echo <ip> >> /etc/fail2ban/ip.blacklist
+
+actionunban = iptables -D fail2ban-<name> -s <ip> -j <blocktype>
+              sed -i /<ip>/d /etc/fail2ban/ip.blacklist
+
+actionstart = iptables -N fail2ban-<name>
+              iptables -A fail2ban-<name> -j RETURN
+              iptables -I <chain> -p <protocol> -m multiport --dports <port> -j fail2ban-<name>
+	      cat /etc/fail2ban/ip.blacklist | while read IP; do iptables -I fail2ban-<name> 1 -s $IP -j DROP; done
