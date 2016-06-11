@@ -13,6 +13,19 @@ if [ -f /usr/sbin/apache2 ]; then
 	hide_output apt-get -y --purge autoremove
 fi
 
+# Add official stable packages from nginx.org
+if ! apt-key list | grep -q -i nginx; then
+	# Add nginx signing key
+	hide_output wget -O - http://nginx.org/keys/nginx_signing.key | sudo apt-key add -
+fi
+if ! grep -q -i nginx /etc/apt/sources.list; then
+	# Add nginx apt sources
+	echo "deb http://nginx.org/packages/ubuntu/ trusty nginx" >> /etc/apt/sources.list
+	echo "deb-src http://nginx.org/packages/ubuntu/ trusty nginx" >> /etc/apt/sources.list
+	hide_output apt-get update
+	hide_output apt-get -y purge nginx-common
+fi
+
 # Install nginx and a PHP FastCGI daemon.
 #
 # Turn off nginx's default website.
