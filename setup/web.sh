@@ -16,14 +16,15 @@ fi
 # Add official stable packages from nginx.org
 if ! apt-key list | grep -q -i nginx; then
 	# Add nginx signing key
-	hide_output wget -O - http://nginx.org/keys/nginx_signing.key | sudo apt-key add -
+	curl -sS http://nginx.org/keys/nginx_signing.key | apt-key add - > /dev/null
 fi
 if ! grep -q -i nginx /etc/apt/sources.list; then
 	# Add nginx apt sources
 	echo "deb http://nginx.org/packages/ubuntu/ trusty nginx" >> /etc/apt/sources.list
 	echo "deb-src http://nginx.org/packages/ubuntu/ trusty nginx" >> /etc/apt/sources.list
 	hide_output apt-get update
-	hide_output apt-get -y purge nginx-common
+	hide_output apt-get -y --force-yes purge nginx-common
+	hide_output apt-get -y --force-yes install nginx
 fi
 
 # Install nginx and a PHP FastCGI daemon.
@@ -49,8 +50,9 @@ sed "s#STORAGE_ROOT#$STORAGE_ROOT#" \
 # 64 in 2014 to accommodate a long domain name (20 characters?). But
 # even at 64, a 58-character domain name won't work (#93), so now
 # we're going up to 128.
-tools/editconf.py /etc/nginx/nginx.conf -s \
-	server_names_hash_bucket_size="128;"
+#tools/editconf.py /etc/nginx/nginx.conf -s \
+#	server_names_hash_bucket_size="128;"
+sed -i "s/server_names_hash_bucket_size.*//" /etc/nginx/nginx.conf
 
 # Tell PHP not to expose its version number in the X-Powered-By header.
 tools/editconf.py /etc/php5/fpm/php.ini -c ';' \
