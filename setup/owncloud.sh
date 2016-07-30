@@ -95,9 +95,15 @@ if [ ! -d /usr/local/lib/owncloud/ ] \
 		cp /home/user-data/owncloud/owncloud.db /tmp
         fi
 
+	if grep -q "8.1.[0-9]" /usr/local/lib/owncloud/version.php; then
+		echo "We are running 8.1.x, upgrading to 8.2.3 first"
+                InstallOwncloud 8.2.3 bfdf6166fbf6fc5438dc358600e7239d1c970613
+	fi
+
+
 	# If we are upgrading from 8.2.x we should go to 9.0 first. Owncloud doesn't support skipping minor versions
 	if grep -q "8.2.[0-9]" /usr/local/lib/owncloud/version.php; then
-		echo "We are running version 8.2.3, upgrading to 9.0.2 first"
+		echo "We are running version 8.2.x, upgrading to 9.0.2 first"
 
 		# We need to disable memcached and go with APC, the upgrade and install fails
 		# with memcached
