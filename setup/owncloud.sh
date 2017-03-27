@@ -71,7 +71,7 @@ InstallOwncloud() {
 	if [ "$flavor" = "Nextcloud" ]; then
 		wget_verify https://github.com/nextcloud/calendar/releases/download/v1.5.2/calendar.tar.gz 7b8a94e01fe740c5c23017ed5bc211983c780fce /tmp/calendar.tgz
 	else
-    wget_verify https://github.com/nextcloud/calendar/releases/download/v1.4.0/calendar.tar.gz c84f3170efca2a99ea6254de34b0af3cb0b3a821 /tmp/calendar.tgz
+	    	wget_verify https://github.com/nextcloud/calendar/releases/download/v1.4.0/calendar.tar.gz c84f3170efca2a99ea6254de34b0af3cb0b3a821 /tmp/calendar.tgz
 	fi
 
 	tar xf /tmp/calendar.tgz -C /usr/local/lib/owncloud/apps/
