@@ -17,6 +17,9 @@ Contacts/Calendar:
 Z-Push:
  * Upgraded Z-Push from 2.4.4 to 2.5.0.
 
+Postgrey:
+* Fetch an updated whitelist for Postgrey on a monthly basis
+
 v0.41 (February 26, 2019)
 -------------------------
 
