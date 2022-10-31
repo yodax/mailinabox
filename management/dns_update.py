@@ -98,7 +98,16 @@ def do_dns_update(env, force=False):
 
 	# Tell nsd to reload changed zone files.
 	if len(updated_domains) > 0:
-		shell('check_call', ["/usr/sbin/nsd-control", "reload"])
+		# 'reconfig' is needed if there are added or removed zones, but
+		# it may not reload existing zones, so we call 'reload' too. If
+		# nsd isn't running, nsd-control fails, so in that case revert
+		# to restarting nsd to make sure it is running. Restarting nsd
+		# should also refresh everything.
+		try:
+			shell('check_call', ["/usr/sbin/nsd-control", "reconfig"])
+			shell('check_call', ["/usr/sbin/nsd-control", "reload"])
+		except:
+			shell('check_call', ["/usr/sbin/service", "nsd", "restart"])
 
 	# Write the OpenDKIM configuration tables for all of the mail domains.
 	from mailconfig import get_mail_domains
@@ -298,7 +307,7 @@ def build_zone(domain, domain_properties, additional_records, env, is_zone=True)
 		# Append a DMARC record.
 		# Skip if the user has set a DMARC record already.
 		if not has_rec("_dmarc", "TXT", prefix="v=DMARC1; "):
-			records.append(("_dmarc", "TXT", 'v=DMARC1; p=quarantine', "Recommended. Specifies that mail that does not originate from the box but claims to be from @%s or which does not have a valid DKIM signature is suspect and should be quarantined by the recipient's mail system." % domain))
+			records.append(("_dmarc", "TXT", 'v=DMARC1; p=quarantine;', "Recommended. Specifies that mail that does not originate from the box but claims to be from @%s or which does not have a valid DKIM signature is suspect and should be quarantined by the recipient's mail system." % domain))
 
 	if domain_properties[domain]["user"]:
 		# Add CardDAV/CalDAV SRV records on the non-primary hostname that points to the primary hostname
@@ -363,7 +372,7 @@ def build_zone(domain, domain_properties, additional_records, env, is_zone=True)
 			if not has_rec(qname, "TXT", prefix="v=spf1 "):
 				records.append((qname,  "TXT", 'v=spf1 -all', "Recommended. Prevents use of this domain name for outbound mail by specifying that no servers are valid sources for mail from @%s. If you do send email from this domain name you should either override this record such that the SPF rule does allow the originating server, or, take the recommended approach and have the box handle mail for this domain (simply add any receiving alias at this domain name to make this machine treat the domain name as one of its mail domains)." % d))
 			if not has_rec("_dmarc" + ("."+qname if qname else ""), "TXT", prefix="v=DMARC1; "):
-				records.append(("_dmarc" + ("."+qname if qname else ""), "TXT", 'v=DMARC1; p=reject', "Recommended. Prevents use of this domain name for outbound mail by specifying that the SPF rule should be honoured for mail from @%s." % d))
+				records.append(("_dmarc" + ("."+qname if qname else ""), "TXT", 'v=DMARC1; p=reject;', "Recommended. Prevents use of this domain name for outbound mail by specifying that the SPF rule should be honoured for mail from @%s." % d))
 
 			# And with a null MX record (https://explained-from-first-principles.com/email/#null-mx-record)
 			if not has_rec(qname, "MX"):
