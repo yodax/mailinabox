@@ -21,8 +21,8 @@ echo "Installing Nextcloud (contacts/calendar)..."
 #   we automatically install intermediate versions as needed.
 # * The hash is the SHA1 hash of the ZIP package, which you can find by just running this script and
 #   copying it from the error message when it doesn't match what is below.
-nextcloud_ver=25.0.6
-nextcloud_hash=68e111268ff35cdc7d24c049958f85d32407c677
+nextcloud_ver=27.0.0
+nextcloud_hash=c81809ec09d642d5d22285ab158952424911fb5f
 
 # Nextcloud apps
 # --------------
@@ -33,10 +33,13 @@ nextcloud_hash=68e111268ff35cdc7d24c049958f85d32407c677
 #   https://github.com/nextcloud/user_external/blob/master/appinfo/info.xml
 # * The hash is the SHA1 hash of the ZIP package, which you can find by just running this script and
 #   copying it from the error message when it doesn't match what is below.
-contacts_ver=4.2.5
-contacts_hash=8f898f003eb6b1a85c0c43b52f829d3aa759ed88
-calendar_ver=3.5.5
-calendar_hash=8505abcf7b3ab2f32d7ca1593b545e577cbeedb4
+contacts_ver=5.2.0
+contacts_hash=8b53d0d93fa56e4cf5aa701ef662d81227c22f96
+
+# Always ensure the versions are supported, see https://apps.nextcloud.com/apps/calendar
+calendar_ver=4.3.4
+calendar_hash=a10d07a0e834d157caa46ac9bebb552191e59ba3
+
 user_external_ver=3.1.0
 user_external_hash=22cabc88b6fc9c26dad3b46be1a652979c9fcf15
 
@@ -170,6 +173,11 @@ if [ ! -d /usr/local/lib/owncloud/ ] || [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextc
 		cp $STORAGE_ROOT/owncloud/config.php $BACKUP_DIRECTORY
 	fi
 
+	if [ -e $STORAGE_ROOT/owncloud/config.php ]; then
+		# Remove the read-onlyness of the config, which is needed for Version 24
+		sed -i -e '/config_is_read_only/d' $STORAGE_ROOT/owncloud/config.php
+	fi
+
 	# If ownCloud or Nextcloud was previously installed....
 	if [ ! -z ${CURRENT_NEXTCLOUD_VER} ]; then
 		# Database migrations from ownCloud are no longer possible because ownCloud cannot be run under
@@ -200,10 +208,15 @@ if [ ! -d /usr/local/lib/owncloud/ ] || [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextc
 			InstallNextcloud 24.0.12 7aa5d61632c1ccf4ca3ff00fb6b295d318c05599 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 0df781b261f55bbde73d8c92da3f99397000972f
 			CURRENT_NEXTCLOUD_VER="24.0.12"
 		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^24 ]]; then
+			InstallNextcloud 25.0.6 68e111268ff35cdc7d24c049958f85d32407c677 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 0df781b261f55bbde73d8c92da3f99397000972f
+			CURRENT_NEXTCLOUD_VER="25.0.6"
+		fi
+		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^25 ]]; then
+			InstallNextcloud 26.0.2 073538179e6ca978d7c550cdc5c7d6f9b4ed2632 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 0df781b261f55bbde73d8c92da3f99397000972f
+			CURRENT_NEXTCLOUD_VER="26.0.2"
+		fi
 	fi
-
-	# Remove the read-onlyness of the config, which is needed for Version 24
-	sed -i -e '/config_is_read_only/d' $STORAGE_ROOT/owncloud/config.php
 
 	InstallNextcloud $nextcloud_ver $nextcloud_hash $contacts_ver $contacts_hash $calendar_ver $calendar_hash $user_external_ver $user_external_hash
 fi
