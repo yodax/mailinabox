@@ -21,8 +21,8 @@ echo "Installing Nextcloud (contacts/calendar)..."
 #   we automatically install intermediate versions as needed.
 # * The hash is the SHA1 hash of the ZIP package, which you can find by just running this script and
 #   copying it from the error message when it doesn't match what is below.
-nextcloud_ver=27.0.1
-nextcloud_hash=AC34AB38B6F7E83F2BE15BD042C258ADC57A8AEA
+nextcloud_ver=27.0.2
+nextcloud_hash=18a40acd6c8a4b5952edaf6ba13836ae53735b3b
 
 # Nextcloud apps
 # --------------
@@ -33,15 +33,16 @@ nextcloud_hash=AC34AB38B6F7E83F2BE15BD042C258ADC57A8AEA
 #   https://github.com/nextcloud/user_external/blob/master/appinfo/info.xml
 # * The hash is the SHA1 hash of the ZIP package, which you can find by just running this script and
 #   copying it from the error message when it doesn't match what is below.
-contacts_ver=5.2.0
-contacts_hash=8b53d0d93fa56e4cf5aa701ef662d81227c22f96
+contacts_ver=5.3.0
+contacts_hash=4b0a6666374e3b55cfd2ae9b72e1d458b87d4c8c
 
 # Always ensure the versions are supported, see https://apps.nextcloud.com/apps/calendar
-calendar_ver=4.3.4
-calendar_hash=a10d07a0e834d157caa46ac9bebb552191e59ba3
+calendar_ver=4.4.2
+calendar_hash=21a42e15806adc9b2618760ef94f1797ef399e2f
 
-user_external_ver=3.1.0
-user_external_hash=22cabc88b6fc9c26dad3b46be1a652979c9fcf15
+# And https://apps.nextcloud.com/apps/user_external
+user_external_ver=3.2.0
+user_external_hash=a494073dcdecbbbc79a9c77f72524ac9994d2eec
 
 # Clear prior packages and install dependencies from apt.
 
@@ -182,6 +183,12 @@ if [ ! -d /usr/local/lib/owncloud/ ] || [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextc
 	if [ ! -z ${CURRENT_NEXTCLOUD_VER} ]; then
 		# Database migrations from ownCloud are no longer possible because ownCloud cannot be run under
 		# PHP 7.
+
+		if [ -e $STORAGE_ROOT/owncloud/config.php ]; then
+			# Remove the read-onlyness of the config, which is needed for migrations, especially for v24
+			sed -i -e '/config_is_read_only/d' $STORAGE_ROOT/owncloud/config.php
+		fi
+
 		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^[89] ]]; then
 			echo "Upgrades from Mail-in-a-Box prior to v0.28 (dated July 30, 2018) with Nextcloud < 13.0.6 (you have ownCloud 8 or 9) are not supported. Upgrade to Mail-in-a-Box version v0.30 first. Setup will continue, but skip the Nextcloud migration."
 			return 0
@@ -192,6 +199,7 @@ if [ ! -d /usr/local/lib/owncloud/ ] || [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextc
 			echo "Upgrades from Mail-in-a-Box prior to v60 with Nextcloud 19 or earlier are not supported. Upgrade to the latest Mail-in-a-Box version supported on your machine first. Setup will continue, but skip the Nextcloud migration."
 			return 0
 		fi
+
 		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^20 ]]; then
 			InstallNextcloud 21.0.7 f5c7079c5b56ce1e301c6a27c0d975d608bb01c9 4.0.7 45e7cf4bfe99cd8d03625cf9e5a1bb2e90549136 3.0.4 d0284b68135777ec9ca713c307216165b294d0fe
 			CURRENT_NEXTCLOUD_VER="21.0.7"
@@ -201,8 +209,8 @@ if [ ! -d /usr/local/lib/owncloud/ ] || [[ ! ${CURRENT_NEXTCLOUD_VER} =~ ^$nextc
 			CURRENT_NEXTCLOUD_VER="22.2.6"
 		fi
 		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^22 ]]; then
-			InstallNextcloud 23.0.9 b6ac7ffa6c1c1c6187fea7d9efc7a32300cdc377 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 0df781b261f55bbde73d8c92da3f99397000972f
-			CURRENT_NEXTCLOUD_VER="23.0.9"
+			InstallNextcloud 23.0.12 7aa5d61632c1ccf4ca3ff00fb6b295d318c05599 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 22cabc88b6fc9c26dad3b46be1a652979c9fcf15
+			CURRENT_NEXTCLOUD_VER="23.0.12"
 		fi
 		if [[ ${CURRENT_NEXTCLOUD_VER} =~ ^23 ]]; then
 			InstallNextcloud 24.0.12 7aa5d61632c1ccf4ca3ff00fb6b295d318c05599 4.1.0 697f6b4a664e928d72414ea2731cb2c9d1dc3077 3.2.2 ce4030ab57f523f33d5396c6a81396d440756f5f 3.0.0 0df781b261f55bbde73d8c92da3f99397000972f
@@ -323,7 +331,7 @@ php$PHP_VER <<EOF > $CONFIG_TEMP && mv $CONFIG_TEMP $STORAGE_ROOT/owncloud/confi
 <?php
 include("$STORAGE_ROOT/owncloud/config.php");
 
-\$CONFIG['config_is_read_only'] = true;
+\$CONFIG['config_is_read_only'] = false;
 
 \$CONFIG['trusted_domains'] = array('$PRIMARY_HOSTNAME');
 
@@ -394,13 +402,16 @@ tools/editconf.py /etc/php/$PHP_VER/cli/conf.d/10-opcache.ini -c ';' \
 	opcache.save_comments=1 \
 	opcache.revalidate_freq=1
 
-# Migrate users_external data from <0.6.0 to version 3.0.0 (see https://github.com/nextcloud/user_external).
+# Migrate users_external data from <0.6.0 to version 3.0.0
+# (see https://github.com/nextcloud/user_external).
 # This version was probably in use in Mail-in-a-Box v0.41 (February 26, 2019) and earlier.
 # We moved to v0.6.3 in 193763f8. Ignore errors - maybe there are duplicated users with the
 # correct backend already.
 sqlite3 $STORAGE_ROOT/owncloud/owncloud.db "UPDATE oc_users_external SET backend='127.0.0.1';" || /bin/true
 
-# Set up a cron job for Nextcloud.
+# Set up a general cron job for Nextcloud.
+# Also add another job for Calendar updates, per advice in the Nextcloud docs
+# https://docs.nextcloud.com/server/24/admin_manual/groupware/calendar.html#background-jobs
 cat > /etc/cron.d/mailinabox-nextcloud << EOF;
 #!/bin/bash
 # Mail-in-a-Box
@@ -410,24 +421,37 @@ chmod +x /etc/cron.d/mailinabox-nextcloud
 
 # Set up a cron job for Calendar updates, per advice in the Nextcloud docs
 # https://docs.nextcloud.com/server/24/admin_manual/groupware/calendar.html#background-jobs
-cat > /etc/cron.d/mailinabox-nextcloud-dav << EOF;
-#!/bin/bash
-# Mail-in-a-Box
-*/5 * * * *	root	sudo -u www-data php$PHP_VER -f /usr/local/lib/owncloud/occ dav:send-event-reminders
-EOF
-chmod +x /etc/cron.d/mailinabox-nextcloud-dav
-sudo -u www-data php$PHP_VER -f /usr/local/lib/owncloud/occ config:app:set dav sendEventRemindersMode --value occ
+#cat > /etc/cron.d/mailinabox-nextcloud-dav << EOF;
+##!/bin/bash
+## Mail-in-a-Box
+#*/5 * * * *	root	sudo -u www-data php$PHP_VER -f /usr/local/lib/owncloud/occ dav:send-event-reminders
+#EOF
+#chmod +x /etc/cron.d/mailinabox-nextcloud-dav
+#sudo -u www-data php$PHP_VER -f /usr/local/lib/owncloud/occ config:app:set dav sendEventRemindersMode --value occ
 
 # Rotate the nextcloud.log file
 cat > /etc/logrotate.d/nextcloud <<EOF
-# Nextcloud logs 
-$STORAGE_ROOT/owncloud/nextcloud.log { 
+# Nextcloud logs
+$STORAGE_ROOT/owncloud/nextcloud.log {
+
+# We also need to change the sending mode from background-job to occ.
+# Or else the reminders will just be sent as soon as possible when the background jobs run.
+hide_output sudo -u www-data php$PHP_VER -f /usr/local/lib/owncloud/occ config:app:set dav sendEventRemindersMode --value occ
+
+# Now set the config to read-only.
+# Do this only at the very bottom when no further occ commands are needed.
+sed -i'' "s/'config_is_read_only'\s*=>\s*false/'config_is_read_only' => true/" $STORAGE_ROOT/owncloud/config.php
+
+# Rotate the nextcloud.log file
+cat > /etc/logrotate.d/nextcloud <<EOF
+# Nextcloud logs
+$STORAGE_ROOT/owncloud/nextcloud.log {
 		size 10M
 		create 640 www-data www-data
 		rotate 30
 		copytruncate
 		missingok
-		compress 
+		compress
 }
 EOF
 
