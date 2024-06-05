@@ -55,9 +55,9 @@ apt_install postfix postfix-sqlite postfix-pcre postgrey ca-certificates
 # * Set the SMTP banner (which must have the hostname first, then anything).
 tools/editconf.py /etc/postfix/main.cf \
 	inet_interfaces=all \
-	smtp_bind_address=$PRIVATE_IP \
-	smtp_bind_address6=$PRIVATE_IPV6 \
-	myhostname=$PRIMARY_HOSTNAME\
+	smtp_bind_address="$PRIVATE_IP" \
+	smtp_bind_address6="$PRIVATE_IPV6" \
+	myhostname="$PRIMARY_HOSTNAME"\
 	smtpd_banner="\$myhostname ESMTP Hi, I'm a Mail-in-a-Box (Ubuntu/Postfix; see https://mailinabox.email/)" \
 	mydestination=localhost
 
@@ -70,10 +70,16 @@ tools/editconf.py /etc/postfix/main.cf \
 	bounce_queue_lifetime=1d
 
 # Guard against SMTP smuggling
-# This short-term workaround is recommended at https://www.postfix.org/smtp-smuggling.html
+# This "long-term" fix is recommended at https://www.postfix.org/smtp-smuggling.html.
+# This beecame supported in a backported fix in package version 3.6.4-1ubuntu1.3. It is
+# unnecessary in Postfix 3.9+ where this is the default. The "short-term" workarounds
+# that we previously had are reverted to postfix defaults (though smtpd_discard_ehlo_keywords
+# was never included in a released version of Mail-in-a-Box).
+tools/editconf.py /etc/postfix/main.cf -e \
+       smtpd_data_restrictions= \
+       smtpd_discard_ehlo_keywords=
 tools/editconf.py /etc/postfix/main.cf \
-	smtpd_data_restrictions=reject_unauth_pipelining \
-	smtpd_discard_ehlo_keywords="chunking, silent-discard"
+       smtpd_forbid_bare_newline=normalize
 
 # ### Outgoing Mail
 
@@ -132,9 +138,9 @@ sed -i "s/PUBLIC_IP/$PUBLIC_IP/" /etc/postfix/outgoing_mail_header_filters
 tools/editconf.py /etc/postfix/main.cf \
 	smtpd_tls_security_level=may\
 	smtpd_tls_auth_only=yes \
-	smtpd_tls_cert_file=$STORAGE_ROOT/ssl/ssl_certificate.pem \
-	smtpd_tls_key_file=$STORAGE_ROOT/ssl/ssl_private_key.pem \
-	smtpd_tls_dh1024_param_file=$STORAGE_ROOT/ssl/dh2048.pem \
+	smtpd_tls_cert_file="$STORAGE_ROOT/ssl/ssl_certificate.pem" \
+	smtpd_tls_key_file="$STORAGE_ROOT/ssl/ssl_private_key.pem" \
+	smtpd_tls_dh1024_param_file="$STORAGE_ROOT/ssl/dh2048.pem" \
 	smtpd_tls_protocols="!SSLv2,!SSLv3" \
 	smtpd_tls_ciphers=medium \
 	tls_medium_cipherlist=ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA \
@@ -224,14 +230,15 @@ tools/editconf.py /etc/postfix/main.cf  -e lmtp_destination_recipient_limit=
 # * `reject_unlisted_recipient`: Although Postfix will reject mail to unknown recipients, it's nicer to reject such mail ahead of greylisting rather than after.
 # * `check_policy_service`: Apply greylisting using postgrey.
 #
+# Note the spamhaus rbl return codes are taken into account as adviced here: https://docs.spamhaus.com/datasets/docs/source/40-real-world-usage/PublicMirrors/MTAs/020-Postfix.html
 # Notes: #NODOC
 # permit_dnswl_client can pass through mail from whitelisted IP addresses, which would be good to put before greylisting #NODOC
 # so these IPs get mail delivered quickly. But when an IP is not listed in the permit_dnswl_client list (i.e. it is not #NODOC
 # whitelisted) then postfix does a DEFER_IF_REJECT, which results in all "unknown user" sorts of messages turning into #NODOC
 # "450 4.7.1 Client host rejected: Service unavailable". This is a retry code, so the mail doesn't properly bounce. #NODOC
 tools/editconf.py /etc/postfix/main.cf \
-	smtpd_sender_restrictions="reject_non_fqdn_sender,reject_unknown_sender_domain,reject_authenticated_sender_login_mismatch,reject_rhsbl_sender dbl.spamhaus.org" \
-	smtpd_recipient_restrictions=permit_sasl_authenticated,permit_mynetworks,"reject_rbl_client zen.spamhaus.org",reject_unlisted_recipient,"check_policy_service inet:127.0.0.1:10023"
+	smtpd_sender_restrictions="reject_non_fqdn_sender,reject_unknown_sender_domain,reject_authenticated_sender_login_mismatch,reject_rhsbl_sender dbl.spamhaus.org=127.0.1.[2..99]" \
+	smtpd_recipient_restrictions="permit_sasl_authenticated,permit_mynetworks,reject_rbl_client zen.spamhaus.org=127.0.0.[2..11],reject_unlisted_recipient,check_policy_service inet:127.0.0.1:10023"
 
 # Postfix connects to Postgrey on the 127.0.0.1 interface specifically. Ensure that
 # Postgrey listens on the same interface (and not IPv6, for instance).
@@ -253,17 +260,17 @@ tools/editconf.py /etc/default/postgrey \
 
 
 # If the $STORAGE_ROOT/mail/postgrey is empty, copy the postgrey database over from the old location
-if [ ! -d $STORAGE_ROOT/mail/postgrey/db ]; then
+if [ ! -d "$STORAGE_ROOT/mail/postgrey/db" ]; then
 	# Stop the service
 	service postgrey stop
 	# Ensure the new paths for postgrey db exists
-	mkdir -p $STORAGE_ROOT/mail/postgrey/db
+	mkdir -p "$STORAGE_ROOT/mail/postgrey/db"
 	# Move over database files
-	mv /var/lib/postgrey/* $STORAGE_ROOT/mail/postgrey/db/ || true
+	mv /var/lib/postgrey/* "$STORAGE_ROOT/mail/postgrey/db/" || true
 fi
 # Ensure permissions are set
-chown -R postgrey:postgrey $STORAGE_ROOT/mail/postgrey/
-chmod 700 $STORAGE_ROOT/mail/postgrey/{,db}
+chown -R postgrey:postgrey "$STORAGE_ROOT/mail/postgrey/"
+chmod 700 "$STORAGE_ROOT/mail/postgrey/"{,db}
 
 # We are going to setup a newer whitelist for postgrey, the version included in the distribution is old
 cat > /etc/cron.daily/mailinabox-postgrey-whitelist << EOF;
