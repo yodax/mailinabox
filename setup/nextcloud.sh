@@ -21,8 +21,8 @@ echo "Installing Nextcloud (contacts/calendar)..."
 #   we automatically install intermediate versions as needed.
 # * The hash is the SHA1 hash of the ZIP package, which you can find by just running this script and
 #   copying it from the error message when it doesn't match what is below.
-nextcloud_ver=27.1.1
-nextcloud_hash=cf75c30fec08a8b80aeccb6036e6c9650efaaf28
+nextcloud_ver=27.1.10
+nextcloud_hash=643aa789b0956a130e0918343c5d975db1828e86
 
 # Nextcloud apps
 # --------------
@@ -100,6 +100,8 @@ InstallNextcloud() {
 	unzip -q /tmp/nextcloud.zip -d /usr/local/lib
 	mv /usr/local/lib/nextcloud /usr/local/lib/owncloud
 	rm -f /tmp/nextcloud.zip
+	chown -R www-data:www-data /usr/local/lib/owncloud
+	chmod -R 750 /usr/local/lib/owncloud
 
 	# The two apps we actually want are not in Nextcloud core. Download the releases from
 	# their github repositories.
